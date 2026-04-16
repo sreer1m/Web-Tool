@@ -1,250 +1,454 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { partners, events, alerts, computeHealthScore } from "@/data";
-import { DollarSign, Users, Calendar, TrendingUp, AlertTriangle, Zap, ArrowRight, TrendingDown } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
+import {
+  partners, events, alerts, datacenters,
+  websiteAnalysisReports, computeHealthScore,
+} from "@/data";
+import {
+  Users, Calendar, Bell, Server, Globe, AlertTriangle,
+  TrendingUp, ArrowRight, CheckCircle2, XCircle, Activity,
+  Monitor, Zap,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 
-const totalRevenue = partners.reduce((s, p) => s + p.totalRevenue, 0);
-const activePartners = partners.filter(p => p.yearsActive.includes(2026) || p.yearsActive.includes(2025)).length;
-const eventsThisYear = events.filter(e => e.year === 2026).length;
-const avgConversion = (events.reduce((s, e) => s + e.conversionRate, 0) / events.length).toFixed(1);
+// ─── Static partner analytics ────────────────────────────────────────────────
+const totalPartners = partners.length;
+const partnersByTier = {
+  platinum: partners.filter(p => p.tier === "platinum").length,
+  gold: partners.filter(p => p.tier === "gold").length,
+  silver: partners.filter(p => p.tier === "silver").length,
+  standard: partners.filter(p => p.tier === "standard").length,
+};
+const partnersByRisk = {
+  high: partners.filter(p => p.riskLevel === "high").length,
+  medium: partners.filter(p => p.riskLevel === "medium").length,
+  low: partners.filter(p => p.riskLevel === "low").length,
+};
+const avgEngagement = Math.round(
+  partners.reduce((s, p) => s + p.engagementScore, 0) / partners.length
+);
+const healthScores = partners.map(p => computeHealthScore(p));
+const avgHealth = Math.round(healthScores.reduce((a, b) => a + b, 0) / healthScores.length);
+const healthyCount = partners.filter(p => computeHealthScore(p) >= 70).length;
+const atRiskCount = partners.filter(p => computeHealthScore(p) < 45).length;
 
-const revenueMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map((m, i) => ({
-  month: m,
-  revenue: partners.reduce((s, p) => s + (p.revenueByMonth[i]?.revenue || 0), 0),
-}));
+// Recently active partners (activity in last 90 days from now)
+const now = new Date("2026-04-15");
+const recentlyActive = partners.filter(p => {
+  const days = Math.floor((now.getTime() - new Date(p.lastActivity).getTime()) / 86400000);
+  return days <= 90;
+}).length;
 
-const topPartners = [...partners].sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 5);
+// ─── Events analytics ────────────────────────────────────────────────────────
+const events2026 = events.filter(e => e.year === 2026);
+const ownedEvents = events2026.filter(e => e.eventKind === "owned");
+const externalEvents = events2026.filter(e => e.eventKind === "external");
+// Upcoming owned events (sorted by date string — approximation)
+const upcomingEvents = [...ownedEvents].slice(0, 5);
 
-const trends = (() => {
-  const out: { type: 'up' | 'down' | 'warn'; text: string }[] = [];
-  const byCountry = Object.fromEntries(
-    ['Germany','France','United Kingdom','Spain','Italy','Netherlands','Switzerland','Poland'].map(c => [
-      c, partners.filter(p => p.country === c).reduce((s, p) => s + p.totalRevenue, 0),
-    ])
-  );
-  const topCountry = Object.entries(byCountry).sort((a,b) => b[1]-a[1])[0];
-  out.push({ type: 'up', text: `${topCountry[0]} leads revenue at €${(topCountry[1]/1e6).toFixed(1)}M` });
-  const highRisk = partners.filter(p => p.riskLevel === 'high');
-  if (highRisk.length > 0) out.push({ type: 'warn', text: `${highRisk.length} high-risk partners require urgent review` });
-  const platGold = partners.filter(p => p.tier === 'platinum' || p.tier === 'gold');
-  const avgHealth = Math.round(platGold.reduce((s, p) => s + computeHealthScore(p), 0) / platGold.length);
-  out.push({ type: avgHealth >= 70 ? 'up' : 'down', text: `Gold/Platinum avg health: ${avgHealth}/100` });
-  const rev2026 = events.filter(e=>e.year===2026).reduce((s,e)=>s+e.revenueImpact,0);
-  const rev2025 = events.filter(e=>e.year===2025).reduce((s,e)=>s+e.revenueImpact,0);
-  const growth = rev2025 > 0 ? Math.round((rev2026-rev2025)/rev2025*100) : 0;
-  out.push({ type: growth > 0 ? 'up' : 'down', text: `Event revenue YoY: ${growth>0?'+':''}${growth}% (2025→2026)` });
-  return out;
-})();
+// ─── Website analysis ────────────────────────────────────────────────────────
+const totalAnalysed = websiteAnalysisReports.length;
+const totalAlignmentIssues = websiteAnalysisReports.reduce((s, r) => s + r.alignmentIssues.length, 0);
+const totalUxIssues = websiteAnalysisReports.reduce((s, r) => s + r.uxIssues.length, 0);
+const reportsWithLighthouse = websiteAnalysisReports.filter(r => r.lighthouse);
+const avgDesktopPerf = reportsWithLighthouse.length
+  ? Math.round(reportsWithLighthouse.reduce((s, r) => s + r.lighthouse!.desktop.performance, 0) / reportsWithLighthouse.length)
+  : null;
+const avgMobilePerf = reportsWithLighthouse.length
+  ? Math.round(reportsWithLighthouse.reduce((s, r) => s + r.lighthouse!.mobile.performance, 0) / reportsWithLighthouse.length)
+  : null;
 
-const regionSummary = ['Germany','France','United Kingdom','Spain','Italy','Netherlands','Switzerland','Poland'].map(country => {
-  const cPartners = partners.filter(p => p.country === country);
-  const cEvents = events.filter(e => e.country === country && e.year === 2026);
-  const rev = cPartners.reduce((s, p) => s + p.totalRevenue, 0);
-  const avgH = cPartners.length > 0
-    ? Math.round(cPartners.reduce((s,p) => s + computeHealthScore(p), 0) / cPartners.length) : 0;
-  return { country, partners: cPartners.length, events: cEvents.length, revenue: rev, health: avgH };
-}).filter(r => r.partners > 0).sort((a, b) => b.revenue - a.revenue);
+// ─── Datacenter analytics ────────────────────────────────────────────────────
+const operationalDCs = datacenters.filter(d => d.status === "operational");
+const avgCapacity = Math.round(operationalDCs.reduce((s, d) => s + d.capacityUsed, 0) / operationalDCs.length);
+const avgUptime = (operationalDCs.reduce((s, d) => s + d.uptime, 0) / operationalDCs.length).toFixed(2);
 
-const nextActions = [
-  { text: 'Review Russia partners — geopolitical risk', priority: 'critical', link: '/alerts' },
-  { text: `Urgent follow-up: ${partners.find(p=>p.riskLevel==='high')?.name || 'high-risk partner'}`, priority: 'high', link: '/actions' },
-  { text: 'Plan Q3 2026 events in underserved markets', priority: 'medium', link: '/actions' },
-  { text: 'Deep-invest in MicroNova AG & Set3 Solutions (Platinum)', priority: 'medium', link: '/compare' },
-];
+// ─── Country coverage ────────────────────────────────────────────────────────
+const countriesCovered = new Set(partners.map(p => p.country)).size;
+const regionMap: Record<string, string[]> = {
+  "DACH": ["Germany", "Austria", "Switzerland"],
+  "Benelux": ["Netherlands", "Belgium", "Luxembourg"],
+  "UK & Ireland": ["United Kingdom", "Ireland"],
+  "Nordics": ["Finland", "Sweden", "Norway", "Denmark", "Iceland"],
+  "Eastern Europe": ["Poland", "Czech Republic", "Hungary", "Romania", "Bulgaria", "Latvia", "Lithuania", "Estonia", "Croatia", "Serbia", "Slovakia", "Slovenia", "Albania", "North Macedonia", "Montenegro"],
+  "Southern Europe": ["France", "Spain", "Italy", "Portugal", "Greece"],
+};
+const partnersByRegion = Object.entries(regionMap).map(([region, countries]) => ({
+  region,
+  count: partners.filter(p => countries.includes(p.country)).length,
+})).sort((a, b) => b.count - a.count);
 
-const kpis = [
-  { label: 'Total Revenue', value: `€${(totalRevenue / 1e6).toFixed(1)}M`, icon: DollarSign, change: '+8.4% YoY', positive: true },
-  { label: 'Active Partners', value: activePartners, icon: Users, change: `${partners.length} total`, positive: true },
-  { label: 'Events (2026)', value: eventsThisYear, icon: Calendar, change: '+3 YoY', positive: true },
-  { label: 'Avg Conversion', value: `${avgConversion}%`, icon: TrendingUp, change: '+0.2%', positive: true },
-];
+// ─── Pan-Europe events (fetched) ─────────────────────────────────────────────
+type PanEvent = { event_name: string; region: string; priority_tier?: string; competitive_intensity?: string };
+type ResearchJSON = { events: PanEvent[]; manageengine_participation: { event_name: string; participated: string }[] };
 
 export default function Dashboard() {
+  const [research, setResearch] = useState<ResearchJSON | null>(null);
+
+  useEffect(() => {
+    fetch("/research-data.json").then(r => r.json()).then(setResearch).catch(() => null);
+  }, []);
+
+  const panEvents = research?.events ?? [];
+  const meParticipating = research?.manageengine_participation.filter(p => p.participated === "YES").length ?? 0;
+  const tier1 = panEvents.filter(e => e.priority_tier === "1").length;
+  const tier2 = panEvents.filter(e => e.priority_tier === "2").length;
+  const tier3 = panEvents.filter(e => e.priority_tier === "3").length;
+  const highCompetition = panEvents.filter(e => e.competitive_intensity === "High").length;
+
+  const highAlerts = alerts.filter(a => a.severity === "high");
+  const mediumAlerts = alerts.filter(a => a.severity === "medium");
+
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div>
         <h1 className="text-2xl font-semibold text-foreground">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">ManageEngine Partner & Event Intelligence — Europe</p>
+        <p className="text-sm text-muted-foreground">ManageEngine Europe — Partner & Event Intelligence Overview</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map(k => (
+      {/* KPI row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {[
+          { label: "Total Partners", value: totalPartners, sub: `${countriesCovered} countries`, icon: Users, color: "text-blue-600", bg: "bg-blue-50" },
+          { label: "Active Alerts", value: alerts.length, sub: `${highAlerts.length} high · ${mediumAlerts.length} medium`, icon: Bell, color: "text-red-600", bg: "bg-red-50" },
+          { label: "2026 Events", value: events2026.length, sub: `${ownedEvents.length} owned · ${externalEvents.length} external`, icon: Calendar, color: "text-orange-600", bg: "bg-orange-50" },
+          { label: "Datacenters", value: datacenters.length, sub: `${operationalDCs.length} operational`, icon: Server, color: "text-green-600", bg: "bg-green-50" },
+        ].map(k => (
           <Card key={k.label}>
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{k.label}</p>
-                  <p className="text-2xl font-semibold mt-1">{k.value}</p>
-                  <p className={`text-xs mt-1 ${k.positive ? 'text-green-600' : 'text-destructive'}`}>{k.change}</p>
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <k.icon className="h-5 w-5 text-primary" />
-                </div>
+            <CardContent className="p-5 flex items-center gap-4">
+              <div className={`h-10 w-10 rounded-lg ${k.bg} flex items-center justify-center flex-shrink-0`}>
+                <k.icon className={`h-5 w-5 ${k.color}`} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">{k.label}</p>
+                <p className="text-2xl font-bold leading-tight">{k.value}</p>
+                <p className="text-xs text-muted-foreground truncate">{k.sub}</p>
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {/* Trend Highlights + Next Best Actions */}
+      {/* Partner Health + Alerts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Partner Health */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-primary" /> Trend Highlights
+              <Users className="h-4 w-4 text-primary" /> Partner Health Overview
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
-            {trends.map((t, i) => (
-              <div key={i} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
-                t.type === 'up' ? 'bg-green-50 text-green-800 border border-green-100' :
-                t.type === 'down' ? 'bg-red-50 text-red-800 border border-red-100' :
-                'bg-yellow-50 text-yellow-800 border border-yellow-100'
-              }`}>
-                {t.type === 'up' ? <TrendingUp className="h-3.5 w-3.5 flex-shrink-0" /> :
-                 t.type === 'down' ? <TrendingDown className="h-3.5 w-3.5 flex-shrink-0" /> :
-                 <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />}
-                {t.text}
+          <CardContent className="space-y-4">
+            {/* Health bar */}
+            <div>
+              <div className="flex justify-between text-xs mb-1">
+                <span className="text-muted-foreground">Avg Health Score</span>
+                <span className={`font-medium ${avgHealth >= 70 ? "text-green-600" : avgHealth >= 45 ? "text-yellow-600" : "text-red-600"}`}>{avgHealth}/100</span>
               </div>
-            ))}
-          </CardContent>
-        </Card>
+              <div className="h-2 bg-accent rounded-full overflow-hidden">
+                <div className="h-full rounded-full transition-all" style={{ width: `${avgHealth}%`, backgroundColor: avgHealth >= 70 ? "#16a34a" : avgHealth >= 45 ? "#ca8a04" : "#dc2626" }} />
+              </div>
+              <div className="flex justify-between text-xs text-muted-foreground mt-2">
+                <span className="text-green-600 font-medium">{healthyCount} Healthy</span>
+                <span className="text-muted-foreground">{partners.length - healthyCount - atRiskCount} Moderate</span>
+                <span className="text-red-600 font-medium">{atRiskCount} At Risk</span>
+              </div>
+            </div>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Zap className="h-4 w-4 text-primary" /> Next Best Actions
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {nextActions.map((a, i) => (
-              <Link key={i} to={a.link}>
-                <div className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer hover:opacity-90 transition-opacity mb-1 ${
-                  a.priority === 'critical' ? 'bg-red-50 border border-red-100' :
-                  a.priority === 'high' ? 'bg-orange-50 border border-orange-100' :
-                  'bg-blue-50 border border-blue-100'
-                }`}>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={a.priority === 'critical' ? 'destructive' : a.priority === 'high' ? 'default' : 'secondary'} className="text-xs">{a.priority}</Badge>
-                    <span className="text-xs">{a.text}</span>
+            {/* Tier breakdown */}
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">By Tier</p>
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { tier: "Platinum", count: partnersByTier.platinum, color: "#6366f1" },
+                  { tier: "Gold", count: partnersByTier.gold, color: "#f59e0b" },
+                  { tier: "Silver", count: partnersByTier.silver, color: "#64748b" },
+                  { tier: "Standard", count: partnersByTier.standard, color: "#94a3b8" },
+                ].map(t => (
+                  <div key={t.tier} className="text-center rounded-lg p-2 bg-accent/50">
+                    <p className="text-base font-bold" style={{ color: t.color }}>{t.count}</p>
+                    <p className="text-xs text-muted-foreground">{t.tier}</p>
                   </div>
-                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                ))}
+              </div>
+            </div>
+
+            {/* Risk + engagement */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground mb-1.5">Risk Distribution</p>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs"><span className="text-red-600">High Risk</span><span className="font-medium">{partnersByRisk.high}</span></div>
+                  <div className="flex justify-between text-xs"><span className="text-yellow-600">Medium Risk</span><span className="font-medium">{partnersByRisk.medium}</span></div>
+                  <div className="flex justify-between text-xs"><span className="text-green-600">Low Risk</span><span className="font-medium">{partnersByRisk.low}</span></div>
                 </div>
-              </Link>
-            ))}
-            <Link to="/actions">
-              <Button variant="ghost" size="sm" className="w-full text-xs mt-1">View All Actions →</Button>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground mb-1.5">Engagement</p>
+                <p className="text-2xl font-bold text-primary">{avgEngagement}<span className="text-sm font-normal text-muted-foreground">/100</span></p>
+                <p className="text-xs text-muted-foreground mt-1">Avg engagement score</p>
+                <p className="text-xs text-green-600 mt-0.5">{recentlyActive} active (90d)</p>
+              </div>
+            </div>
+
+            <Link to="/partners">
+              <Button variant="ghost" size="sm" className="w-full text-xs">View All Partners →</Button>
             </Link>
           </CardContent>
         </Card>
-      </div>
 
-      {/* Revenue + Alerts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-2"><CardTitle className="text-base">Revenue Trend (2025 Monthly)</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={revenueMonths}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" tickFormatter={v => `€${(v/1e6).toFixed(1)}M`} />
-                <Tooltip formatter={(v: number) => [`€${v.toLocaleString()}`, 'Revenue']} />
-                <Line type="monotone" dataKey="revenue" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
+        {/* Active Alerts */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-yellow-500" /> Active Alerts
+              <Bell className="h-4 w-4 text-red-500" /> Active Alerts
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {alerts.slice(0, 5).map(a => (
-              <div key={a.id} className={`flex items-start gap-2 text-xs px-2 py-2 rounded-lg ${
-                a.severity === 'high' ? 'bg-red-50 border border-red-100' :
-                a.severity === 'medium' ? 'bg-yellow-50 border border-yellow-100' :
-                'bg-blue-50 border border-blue-100'
+            {alerts.map(a => (
+              <div key={a.id} className={`flex items-start gap-2 text-xs px-3 py-2 rounded-lg border ${
+                a.severity === "high" ? "bg-red-50 border-red-100" :
+                a.severity === "medium" ? "bg-yellow-50 border-yellow-100" :
+                "bg-blue-50 border-blue-100"
               }`}>
-                <Badge variant={a.severity === 'high' ? 'destructive' : a.severity === 'medium' ? 'secondary' : 'outline'} className="text-xs flex-shrink-0">{a.severity}</Badge>
-                <span className="leading-tight">{a.message}</span>
+                {a.severity === "high" ? <AlertTriangle className="h-3.5 w-3.5 text-red-500 flex-shrink-0 mt-0.5" /> :
+                 a.severity === "medium" ? <AlertTriangle className="h-3.5 w-3.5 text-yellow-500 flex-shrink-0 mt-0.5" /> :
+                 <TrendingUp className="h-3.5 w-3.5 text-blue-500 flex-shrink-0 mt-0.5" />}
+                <span className="leading-snug">{a.message}</span>
               </div>
             ))}
             <Link to="/alerts">
-              <Button variant="ghost" size="sm" className="w-full text-xs">View All Alerts →</Button>
+              <Button variant="ghost" size="sm" className="w-full text-xs mt-1">View All Alerts →</Button>
             </Link>
           </CardContent>
         </Card>
       </div>
 
-      {/* Region Summary Cards */}
-      <div>
-        <h2 className="text-base font-semibold mb-3">Region Summary</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {regionSummary.map(r => (
-            <Card key={r.country} className="hover:shadow-sm transition-shadow">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium">{r.country}</p>
-                  <div className="h-1.5 w-14 bg-accent rounded-full overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${r.health}%`, backgroundColor: r.health >= 70 ? '#16a34a' : r.health >= 45 ? '#ca8a04' : '#dc2626' }} />
+      {/* Partners by Region */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Globe className="h-4 w-4 text-primary" /> Partner Coverage by Region
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {partnersByRegion.map(r => {
+              const regionColors: Record<string, string> = {
+                "DACH": "#8b5cf6", "Benelux": "#14b8a6", "UK & Ireland": "#ec4899",
+                "Nordics": "#3b82f6", "Eastern Europe": "#06b6d4", "Southern Europe": "#f97316",
+              };
+              const color = regionColors[r.region] ?? "#6b7280";
+              return (
+                <div key={r.region} className="rounded-lg border p-3 text-center">
+                  <p className="text-xl font-bold" style={{ color }}>{r.count}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{r.region}</p>
+                  <div className="h-1 rounded-full mt-2 bg-accent overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, (r.count / totalPartners) * 300)}%`, backgroundColor: color }} />
                   </div>
                 </div>
-                <p className="text-xl font-bold text-primary">€{(r.revenue / 1e6).toFixed(1)}M</p>
-                <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                  <span>{r.partners} partner{r.partners !== 1 ? 's' : ''}</span>
-                  <span>{r.events} '26 event{r.events !== 1 ? 's' : ''}</span>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Events 2026 + Pan-Europe Events */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Owned Events 2026 */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-orange-500" /> ManageEngine Events 2026
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {upcomingEvents.map(e => (
+              <div key={e.id} className="flex items-center justify-between bg-orange-50 border border-orange-100 rounded-lg px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium">{e.name}</p>
+                  <p className="text-xs text-muted-foreground">{e.date} · {e.location}</p>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                <Badge variant="outline" className="text-xs">{e.category}</Badge>
+              </div>
+            ))}
+            <Link to="/events">
+              <Button variant="ghost" size="sm" className="w-full text-xs mt-1">View All Events →</Button>
+            </Link>
+          </CardContent>
+        </Card>
+
+        {/* Pan-Europe Events */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Globe className="h-4 w-4 text-sky-500" /> Pan-Europe Third Party Events
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {panEvents.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">Loading event intelligence…</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: "Total Tracked", value: panEvents.length, color: "text-foreground" },
+                    { label: "ME Participating", value: meParticipating, color: "text-green-600" },
+                    { label: "Tier 1 Priority", value: tier1, color: "text-amber-600" },
+                    { label: "High Competition", value: highCompetition, color: "text-red-600" },
+                  ].map(s => (
+                    <div key={s.label} className="bg-accent/50 rounded-lg p-2.5">
+                      <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+                      <p className="text-xs text-muted-foreground">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1.5">Priority Tier Breakdown</p>
+                  <div className="space-y-1.5">
+                    {[
+                      { tier: "Tier 1", count: tier1, total: panEvents.length, color: "#d97706" },
+                      { tier: "Tier 2", count: tier2, total: panEvents.length, color: "#3b82f6" },
+                      { tier: "Tier 3", count: tier3, total: panEvents.length, color: "#64748b" },
+                    ].map(t => (
+                      <div key={t.tier} className="flex items-center gap-2">
+                        <span className="text-xs w-12" style={{ color: t.color }}>{t.tier}</span>
+                        <div className="flex-1 h-1.5 bg-accent rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${(t.count / t.total) * 100}%`, backgroundColor: t.color }} />
+                        </div>
+                        <span className="text-xs text-muted-foreground w-6 text-right">{t.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <Link to="/events">
+                  <Button variant="ghost" size="sm" className="w-full text-xs">View Pan-Europe Events →</Button>
+                </Link>
+              </>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Top Partners + Revenue Bar */}
+      {/* Website Analysis + Datacenters */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Website Analysis Summary */}
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">Top 5 Partners by Revenue</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            {topPartners.map((p, i) => (
-              <div key={p.id} className="flex items-center justify-between py-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground w-4">{i + 1}</span>
-                  <div>
-                    <Link to={`/partners/${p.id}`} className="text-sm font-medium text-primary hover:underline">{p.name}</Link>
-                    <p className="text-xs text-muted-foreground">{p.country}</p>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Monitor className="h-4 w-4 text-primary" /> Partner Website Analysis
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: "Partners Analysed", value: totalAnalysed },
+                { label: "Alignment Issues", value: totalAlignmentIssues },
+                { label: "UX Issues", value: totalUxIssues },
+              ].map(s => (
+                <div key={s.label} className="bg-accent/50 rounded-lg p-2.5 text-center">
+                  <p className="text-xl font-bold text-primary">{s.value}</p>
+                  <p className="text-xs text-muted-foreground">{s.label}</p>
+                </div>
+              ))}
+            </div>
+            {avgDesktopPerf !== null && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Avg Lighthouse Scores</p>
+                {[
+                  { label: "Desktop Performance", score: avgDesktopPerf },
+                  { label: "Mobile Performance", score: avgMobilePerf! },
+                ].map(s => (
+                  <div key={s.label}>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-muted-foreground">{s.label}</span>
+                      <span className={`font-medium ${s.score >= 70 ? "text-green-600" : s.score >= 50 ? "text-yellow-600" : "text-red-600"}`}>{s.score}/100</span>
+                    </div>
+                    <div className="h-1.5 bg-accent rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${s.score}%`, backgroundColor: s.score >= 70 ? "#16a34a" : s.score >= 50 ? "#ca8a04" : "#dc2626" }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Link to="/website-analysis">
+              <Button variant="ghost" size="sm" className="w-full text-xs">View Full Analysis →</Button>
+            </Link>
+          </CardContent>
+        </Card>
+
+        {/* Datacenters */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Server className="h-4 w-4 text-green-600" /> Datacenter Status
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-3 gap-2 mb-1">
+              {[
+                { label: "Avg Uptime", value: `${avgUptime}%`, color: "text-green-600" },
+                { label: "Avg Capacity", value: `${avgCapacity}%`, color: "text-blue-600" },
+                { label: "Operational", value: operationalDCs.length, color: "text-green-600" },
+              ].map(s => (
+                <div key={s.label} className="bg-accent/50 rounded-lg p-2.5 text-center">
+                  <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
+                  <p className="text-xs text-muted-foreground">{s.label}</p>
+                </div>
+              ))}
+            </div>
+            {datacenters.map(dc => (
+              <div key={dc.id} className="flex items-center justify-between px-3 py-2 bg-accent/40 rounded-lg">
+                <div className="flex items-center gap-2 min-w-0">
+                  {dc.status === "operational"
+                    ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600 flex-shrink-0" />
+                    : dc.status === "maintenance"
+                    ? <Activity className="h-3.5 w-3.5 text-yellow-500 flex-shrink-0" />
+                    : <XCircle className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />}
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium truncate">{dc.name}</p>
+                    <p className="text-xs text-muted-foreground">{dc.location}</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-semibold">€{(p.totalRevenue / 1e6).toFixed(2)}M</p>
-                  <Badge variant="outline" className="text-xs capitalize">{p.tier}</Badge>
+                <div className="text-right flex-shrink-0 ml-2">
+                  <Badge variant={dc.status === "operational" ? "outline" : "secondary"} className="text-xs capitalize">{dc.status}</Badge>
+                  {dc.status === "operational" && <p className="text-xs text-muted-foreground mt-0.5">{dc.capacityUsed}% used</p>}
                 </div>
               </div>
             ))}
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">Revenue by Region</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={regionSummary.slice(0, 6)} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `€${(v/1e6).toFixed(1)}M`} />
-                <YAxis type="category" dataKey="country" tick={{ fontSize: 11 }} width={100} />
-                <Tooltip formatter={(v: number) => [`€${(v/1e6).toFixed(2)}M`, 'Revenue']} />
-                <Bar dataKey="revenue" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
       </div>
+
+      {/* Quick Actions */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Zap className="h-4 w-4 text-primary" /> Quick Actions
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              { label: "Review High-Risk Partners", desc: `${partnersByRisk.high} partners need attention`, link: "/partners", color: "border-red-200 bg-red-50" },
+              { label: "View Active Alerts", desc: `${highAlerts.length} critical · ${mediumAlerts.length} medium`, link: "/alerts", color: "border-yellow-200 bg-yellow-50" },
+              { label: "Explore Europe Map", desc: "Partners, events & competitors", link: "/map", color: "border-blue-200 bg-blue-50" },
+              { label: "Website Analysis", desc: `${totalAlignmentIssues + totalUxIssues} total issues flagged`, link: "/website-analysis", color: "border-purple-200 bg-purple-50" },
+            ].map(a => (
+              <Link key={a.label} to={a.link}>
+                <div className={`rounded-lg border px-3 py-3 cursor-pointer hover:shadow-sm transition-shadow ${a.color}`}>
+                  <p className="text-sm font-medium">{a.label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{a.desc}</p>
+                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground mt-2" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

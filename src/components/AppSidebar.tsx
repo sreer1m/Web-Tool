@@ -1,9 +1,8 @@
 import {
-  LayoutDashboard, Map, Users, Calendar, Megaphone, Brain, Settings,
-  Zap, Bell, GitCompare, Globe
+  LayoutDashboard, Map, Users, Calendar,
+  Zap, Bell, Globe, StickyNote,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useLocation } from "react-router-dom";
 import { partners, alerts, computeHealthScore } from "@/data";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
@@ -13,27 +12,21 @@ import {
 const mainItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Europe Map", url: "/map", icon: Map },
+  { title: "Notes", url: "/notes", icon: StickyNote },
 ];
 
 const partnerItems = [
   { title: "Partners", url: "/partners", icon: Users },
-  { title: "Compare", url: "/compare", icon: GitCompare },
   { title: "Website Analysis", url: "/website-analysis", icon: Globe },
 ];
 
 const eventItems = [
   { title: "Events", url: "/events", icon: Calendar },
-  { title: "Campaigns", url: "/campaigns", icon: Megaphone },
 ];
 
 const intelligenceItems = [
   { title: "Action Center", url: "/actions", icon: Zap },
   { title: "Alerts", url: "/alerts", icon: Bell },
-  { title: "Intelligence", url: "/intelligence", icon: Brain },
-];
-
-const bottomItems = [
-  { title: "Settings", url: "/settings", icon: Settings },
 ];
 
 export function AppSidebar() {
@@ -107,7 +100,6 @@ export function AppSidebar() {
           '/alerts': alertCount > 0 ? alertCount : 0,
           '/actions': criticalActionCount > 0 ? criticalActionCount : 0,
         })}
-        {renderGroup("System", bottomItems)}
       </SidebarContent>
     </Sidebar>
   );

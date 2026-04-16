@@ -5,7 +5,12 @@ export { countries, alerts } from './countries';
 export { datacenters } from './datacenters';
 export { eventLearnings } from './eventLearnings';
 export { websiteAnalysisReports } from './websiteAnalysis';
+export { regions, COUNTRY_TO_REGION } from './regions';
+export { countryIntelligence } from './globalMarkets';
+export { globalEvents } from './globalEvents';
+export { defaultNotes } from './globalNotes';
 export type * from './types';
+export type * from './globalTypes';
 
 // Utility: compute partner health score (0–100)
 import { Partner } from './types';
